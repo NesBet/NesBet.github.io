@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Event Attendance Register</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 20px; max-width: 450px; margin: auto; background-color: #f8f9fa; }
+        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        label { font-weight: bold; display: block; margin-top: 10px; font-size: 0.9em; }
+        input, select, button { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { background: #28a745; color: white; border: none; font-size: 1em; font-weight: bold; margin-top: 20px; cursor: pointer; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        #status { font-size: 0.85em; text-align: center; margin-top: 10px; font-weight: bold; }
+        .error { color: #dc3545; }
+        .success { color: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <h2>Attendance</h2>
+        <p id="status">📍 Initializing Location Access...</p>
+        
+        <form id="attendanceForm">
+            <label>Full Name</label>
+            <input type="text" name="name" placeholder="John Doe" required>
+
+            <label>Phone Number</label>
+            <input type="tel" name="phone" placeholder="0712345678" required>
+
+            <label>Email Address</label>
+            <input type="email" name="email" id="emailInput" placeholder="john@example.com" required>
+
+            <label>Branch/Campus</label>
+            <input type="text" name="branch" placeholder="Main Campus" required>
+
+            <label>Role</label>
+            <select name="role" required>
+                <option value="Staff">Staff</option>
+                <option value="Speaker">Trainer</option>
+            </select>
+
+            <label>Training Type</label>
+            <select name="training" required>
+                <option value="FM">FM (Fire Marshal)</option>
+                <option value="FA">FA (First Aid)</option>
+            </select>
+
+            <input type="hidden" name="lat" id="lat">
+            <input type="hidden" name="lon" id="lon">
+
+            <button type="submit" id="submitBtn" disabled>Check-in Now</button>
+        </form>
+    </div>
+
+    <script>
+        const statusMsg = document.getElementById('status');
+        const submitBtn = document.getElementById('submitBtn');
+        const form = document.getElementById('attendanceForm');
+
+        // --- CONFIGURATION ---
+        const EVENT_COORDS = { lat: -1.2841, lon: 36.8155 }; // UPDATE THIS
+        const MAX_DISTANCE_METERS = 300; // Allowed radius
+        // ---------------------
+
+        // Haversine formula to calculate distance in meters
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // Earth radius in meters
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+            return R * c; // returns distance in meters
+        }
+
+        if (localStorage.getItem('attended_event_2026')) {
+            document.getElementById('mainContainer').innerHTML = `
+                <div style="text-align:center; padding: 20px;">
+                    <h2 style="color: #28a745;">Check-in Complete! ✅</h2>
+                    <p>You have already submitted your attendance.</p>
+                </div>`;
+        }
+
+        // Capture and Verify Location
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const uLat = position.coords.latitude;
+                const uLon = position.coords.longitude;
+                
+                document.getElementById('lat').value = uLat;
+                document.getElementById('lon').value = uLon;
+
+                const distance = calculateDistance(uLat, uLon, EVENT_COORDS.lat, EVENT_COORDS.lon);
+
+                if (distance <= MAX_DISTANCE_METERS) {
+                    statusMsg.innerText = "✅ Location verified. You are at the venue.";
+                    statusMsg.className = "success";
+                    submitBtn.disabled = false;
+                } else {
+                    statusMsg.innerText = `❌ Error: You are too far away (${Math.round(distance)}m).`;
+                    statusMsg.className = "error";
+                    submitBtn.disabled = true;
+                }
+            },
+            (error) => {
+                statusMsg.innerText = "❌ Error: GPS access denied. Please enable location.";
+                statusMsg.className = "error";
+            },
+            { enableHighAccuracy: true }
+        );
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            submitBtn.innerText = "Processing...";
+            submitBtn.disabled = true;
+
+            const data = Object.fromEntries(new FormData(e.target).entries());
+
+            try {
+                const response = await fetch('http://localhost:5678/webhook/submit-attendance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    localStorage.setItem('attended_event_2026', 'true');
+                    alert("Success! Your attendance has been recorded.");
+                    location.reload(); 
+                } else {
+                    alert("Submission failed. You might already be registered.");
+                }
+            } catch (err) {
+                alert("Network error.");
+            } finally {
+                submitBtn.innerText = "Check-in Now";
+                submitBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
